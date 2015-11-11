@@ -8,8 +8,16 @@ module DocxReplace
   class Doc
     attr_reader :document_content
 
-    def initialize(path, temp_dir=nil)
-      @zip_file = Zip::File.new(path)
+    IO_METHODS = [:tell, :seek, :read, :close]
+
+    def initialize(path_or_io, temp_dir=nil)
+      if IO_METHODS.all? { |method| path_or_io.respond_to? method }
+        Zip::File.open_buffer(path_or_io) do |zf|
+          @zip_file = zf
+        end
+      else
+        @zip_file = Zip::File.new(path_or_io)
+      end
       @temp_dir = temp_dir
       read_docx_file
     end
