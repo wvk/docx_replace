@@ -8,10 +8,12 @@ module DocxReplace
   class Doc
     attr_reader :document_content
 
-    IO_METHODS = [:tell, :seek, :read, :close]
+    IO_METHODS = [:tell, :seek, :read, :close].freeze
+    DOCUMENT_FILE_PATH = 'word/document.xml'.freeze
 
     def initialize(path_or_io, temp_dir=nil)
       if IO_METHODS.all? { |method| path_or_io.respond_to? method }
+        path_or_io.seek 0
         Zip::File.open_buffer(path_or_io) do |zf|
           @zip_file = zf
         end
@@ -19,15 +21,16 @@ module DocxReplace
         @zip_file = Zip::File.new(path_or_io)
       end
       @temp_dir = temp_dir
+
       read_docx_file
     end
 
     def replace(pattern, replacement, multiple_occurrences=false)
       replace = replacement.to_s
       if multiple_occurrences
-        @document_content.force_encoding("UTF-8").gsub!(pattern, replace)
+        @document_content.force_encoding('UTF-8').gsub!(pattern, replace)
       else
-        @document_content.force_encoding("UTF-8").sub!(pattern, replace)
+        @document_content.force_encoding('UTF-8').sub!(pattern, replace)
       end
     end
 
@@ -41,28 +44,29 @@ module DocxReplace
 
     alias_method :uniq_matches, :unique_matches
 
-
     def commit(new_path=nil)
       write_back_to_file(new_path)
     end
-    
+
     def commit_to_stream(io)
-      Zip::OutputStream.write_buffer(io) do |zos|
-        @zip_file.entries.each do |e|
-          unless e.name == DOCUMENT_FILE_PATH
-            zos.put_next_entry(e.name)
-            zos.print e.get_input_stream.read
+      io.binmode if io.respond_to? :binmode
+      r = Zip::OutputStream.write_buffer io do |zos|
+        @zip_file.entries.each do |entry|
+          zos.put_next_entry(entry.name)
+          if entry.name == DOCUMENT_FILE_PATH
+            zos.write @document_content
+            else
+            zos.copy_raw_entry entry
           end
         end
-
-        zos.put_next_entry(DOCUMENT_FILE_PATH)
-        zos.print @document_content
       end
-      
+      r.flush
+      io.reopen r
+      io.rewind
+      io
     end
 
     private
-    DOCUMENT_FILE_PATH = 'word/document.xml'
 
     def read_docx_file
       @document_content = @zip_file.read(DOCUMENT_FILE_PATH)
@@ -74,7 +78,7 @@ module DocxReplace
       else
         temp_file = Tempfile.new('docxedit-', @temp_dir)
       end
-      
+
       self.commit_to_stream(temp_file)
 
       if new_path.nil?
