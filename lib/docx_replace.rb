@@ -45,6 +45,21 @@ module DocxReplace
     def commit(new_path=nil)
       write_back_to_file(new_path)
     end
+    
+    def commit_to_stream(io)
+      Zip::OutputStream.write_buffer(io) do |zos|
+        @zip_file.entries.each do |e|
+          unless e.name == DOCUMENT_FILE_PATH
+            zos.put_next_entry(e.name)
+            zos.print e.get_input_stream.read
+          end
+        end
+
+        zos.put_next_entry(DOCUMENT_FILE_PATH)
+        zos.print @document_content
+      end
+      
+    end
 
     private
     DOCUMENT_FILE_PATH = 'word/document.xml'
@@ -59,17 +74,8 @@ module DocxReplace
       else
         temp_file = Tempfile.new('docxedit-', @temp_dir)
       end
-      Zip::OutputStream.open(temp_file.path) do |zos|
-        @zip_file.entries.each do |e|
-          unless e.name == DOCUMENT_FILE_PATH
-            zos.put_next_entry(e.name)
-            zos.print e.get_input_stream.read
-          end
-        end
-
-        zos.put_next_entry(DOCUMENT_FILE_PATH)
-        zos.print @document_content
-      end
+      
+      self.commit_to_stream(temp_file)
 
       if new_path.nil?
         path = @zip_file.name
