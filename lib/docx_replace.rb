@@ -16,7 +16,7 @@ module DocxReplace
     end
 
     def replace(pattern, replacement, multiple_occurrences=false)
-      replace = replacement.to_s
+      replace = CGI.escapeHTML(replacement.to_s)
       @document_contents.each do |path, document|
         if multiple_occurrences
           document.force_encoding("UTF-8").gsub!(pattern, replace)
