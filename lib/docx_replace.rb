@@ -18,7 +18,7 @@ module DocxReplace
     def replace(pattern, replacement, multiple_occurrences=false)
       replace = CGI.escapeHTML(replacement.to_s)
       replace = replace.gsub("\n", '</w:t><w:br/><w:t>')
-      replace = replace.gsub("\t", '<w:tab/>')
+      replace = replace.gsub("\t", '</w:t><w:tab/><w:t>')
       @document_contents.each do |path, document|
         if multiple_occurrences
           document.force_encoding("UTF-8").gsub!(pattern, replace)
