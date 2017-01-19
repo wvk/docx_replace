@@ -1,6 +1,6 @@
 # encoding: UTF-8
 
-require "docx_replace/version"
+require 'docx_replace/version'
 require 'zip'
 require 'tempfile'
 
@@ -9,7 +9,6 @@ module DocxReplace
     attr_reader :document_content
 
     IO_METHODS = [:tell, :seek, :read, :close].freeze
-    DOCUMENT_FILE_PATH = 'word/document.xml'.freeze
 
     def initialize(path_or_io, temp_dir=nil)
       if IO_METHODS.all? { |method| path_or_io.respond_to? method }
@@ -20,22 +19,25 @@ module DocxReplace
       else
         @zip_file = Zip::File.new(path_or_io)
       end
-      @temp_dir = temp_dir
+      @document_file_paths = find_query_file_paths(@zip_file)
 
-      read_docx_file
+      @temp_dir = temp_dir
+      read_docx_files
     end
 
-    def replace(pattern, replacement, multiple_occurrences=false)
-      replace = replacement.to_s.encode(xml: :text)
-      if multiple_occurrences
-        @document_content.force_encoding('UTF-8').gsub!(pattern, replace)
-      else
-        @document_content.force_encoding('UTF-8').sub!(pattern, replace)
+    def replace(pattern, replacement, multiple_occurrences = false)
+      replacement = CGI.escapeHTML(replacement.to_s.encode(xml: :text)).gsub("\n", '</w:t><w:br/><w:t>').gsub("\t", '</w:t><w:tab/><w:t>')
+      @document_contents.each do |path, document_content|
+        if multiple_occurrences
+          document_content.force_encoding('UTF-8').gsub!(pattern, replacement)
+        else
+          document_content.force_encoding('UTF-8').sub!(pattern, replacement)
+        end
       end
     end
 
     def matches(pattern)
-      @document_content.scan(pattern).map{|match| match.first}
+      @document_contents.values.join.scan(pattern).map{|match| match.first}
     end
 
     def unique_matches(pattern)
@@ -51,14 +53,18 @@ module DocxReplace
     def commit_to_stream(io = ::StringIO.new(''))
       io.binmode if io.respond_to? :binmode
       r = Zip::OutputStream.write_buffer io do |zos|
-        @zip_file.entries.each do |entry|
-          zos.put_next_entry(entry.name)
-          if entry.name == DOCUMENT_FILE_PATH
-            zos.write @document_content
-            else
-            zos.copy_raw_entry entry
+         @zip_file.entries.each do |e|
+          unless @document_file_paths.include?(e.name)
+            zos.put_next_entry e.name
+            zos.print e.get_input_stream.read
           end
         end
+
+        @document_contents.each do |path, document|
+          zos.put_next_entry path
+          zos.print document
+        end
+
       end
       r.flush
       io.reopen r
@@ -68,8 +74,17 @@ module DocxReplace
 
     private
 
-    def read_docx_file
-      @document_content = @zip_file.read(DOCUMENT_FILE_PATH)
+    def find_query_file_paths(zipfile)
+      zipfile.entries.map(&:name).select do |entry|
+        !(/^word\/(document|footer[0-9]+|header[0-9]+).xml$/ =~ entry).nil?
+      end
+    end
+
+    def read_docx_files
+      @document_contents = {}
+      @document_file_paths.each do |path|
+        @document_contents[path] = @zip_file.read(path)
+      end
     end
 
     def write_back_to_file(new_path=nil)
