@@ -48,7 +48,7 @@ module DocxReplace
       write_back_to_file(new_path)
     end
 
-    def commit_to_stream(io)
+    def commit_to_stream(io = ::StringIO.new(''))
       io.binmode if io.respond_to? :binmode
       r = Zip::OutputStream.write_buffer io do |zos|
         @zip_file.entries.each do |entry|
